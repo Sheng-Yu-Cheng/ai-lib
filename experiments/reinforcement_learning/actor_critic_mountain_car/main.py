@@ -3,15 +3,16 @@ import torch.nn as nn
 from benchmarks.gymnasium.continuous_mountain_car import ContinuousMountainCar
 from methods.reinforcement_learning.actor_critic.network import ActorCriticNetwork
 
+
 lr = 1e-4
-n_episodes = 1000
-gamma = 0.99
+n_episodes = 300
+gamma = 0.999
 
 env = ContinuousMountainCar(verbose = True)
 
 model = ActorCriticNetwork(
     state_dim = env.state_dim, 
-    hidden_dims = (64, 64, 64), 
+    hidden_dims = (64, 64), 
     action_dim = env.action_dim, 
     activation = nn.ReLU, 
 )
@@ -33,12 +34,15 @@ for episode in range(n_episodes):
         done = terminated or truncated
         
         with torch.no_grad():
-            _, _, value_next = model.forward(torch.as_tensor(next_state, dtype = torch.float32))
+            _, _, value_next = model(torch.as_tensor(next_state, dtype=torch.float32))
+            if terminated:
+                value_next = torch.zeros_like(value_next)
         advantage = reward + gamma * value_next - value_now
         actor_loss = - advantage.detach() * action_distribution.log_prob(action).sum()
         critic_loss = advantage.pow(2).mean()
+        entropy = action_distribution.entropy().sum()
         
-        loss = actor_loss + critic_loss * 0.5
+        loss = actor_loss + critic_loss * 0.5 - 0.1 * entropy
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -47,5 +51,12 @@ for episode in range(n_episodes):
         episode_reward += reward
         step += 1
     
-    if episode % 100 == 0:
-        print(f"Episode {episode} | episode reward = {episode_reward}")
+    print(
+        f"Episode {episode + 1} | "
+        f"Reward={episode_reward:.2f} | "
+        f"Steps={step} | "
+        f"mean={mean.detach().cpu().numpy()} | "
+        f"std={std.detach().cpu().numpy()} | "
+        f"terminated={terminated} | "
+        f"truncated={truncated}"
+    )
